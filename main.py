@@ -1,0 +1,458 @@
+import asyncio
+import logging
+import re
+from datetime import datetime
+from typing import Optional, Dict, Any
+import html
+import os
+
+from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
+from aiogram.filters import CommandStart, Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
+from dotenv import load_dotenv
+
+load_dotenv()
+BOT_TOKEN = os.getenv('TOKEN')
+CHANNEL_ID = -1003649569064  
+
+
+RATE_LIMIT_SECONDS = 5  # Минимальное время между запросами от одного пользователя
+last_request_time: Dict[int, float] = {}
+
+# Максимальная длина сообщения
+MAX_MESSAGE_LENGTH = 50
+
+# Паттерны для валидации телефона (разные форматы)
+PHONE_PATTERNS = [
+    r'^\+?[1-9]\d{1,14}$',  # Международный формат E.164
+    r'^\+7\d{10}$',  # Россия
+    r'^998\d{9}$',  # Узбекистан
+    r'^992\d{9}$',  # Таджикистан
+    r'^996\d{9}$',  # Кыргызстан
+    r'^\d{10,15}$',  # Общий паттерн
+]
+
+# === ТЕКСТЫ И ССЫЛКИ ===
+# ВАЖНО: Валидируйте внешние ссылки!
+LAW_URL = "http://publication.pravo.gov.ru/document/0001202412280045?index=1"
+ROSOBR_URL = "https://obrnadzor.gov.ru/news/bolee-87-nesovershennoletnih-inostrannyh-grazhdan-pretenduyushhih-na-obuchenie-v-rossijskih-shkolah-ne-mogut-byt-zachisleny/"
+
+# Кнопки выбора языка
+LANGS = [
+    ("ru", "🇷🇺 Русский"),
+    ("uz", "🇺🇿 O'zbek"),
+    ("tg", "🇹🇯 Тоҷикӣ"),
+    ("ky", "🇰🇬 Кыргызча"),
+    ("en", "🇬🇧 English"),
+]
+
+# Создаем словарь для быстрого доступа к названиям языков
+LANG_NAMES = dict(LANGS)
+
+
+# === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ БЕЗОПАСНОСТИ ===
+def validate_phone_number(phone: str) -> bool:
+    """Валидация номера телефона"""
+    phone = phone.strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+
+    for pattern in PHONE_PATTERNS:
+        if re.match(pattern, phone):
+            return True
+
+    return False
+
+
+def sanitize_input(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> str:
+    """Очистка пользовательского ввода от потенциально опасных символов"""
+    if not text:
+        return ""
+
+    # Обрезаем до максимальной длины
+    text = text[:max_length]
+
+    # Экранируем HTML символы (для защиты от XSS)
+    text = html.escape(text)
+
+    # Убираем множественные пробелы
+    text = ' '.join(text.split())
+
+    return text
+
+
+def check_rate_limit(user_id: int) -> bool:
+    """Проверка ограничения на частоту запросов"""
+    current_time = datetime.now().timestamp()
+
+    if user_id in last_request_time:
+        time_diff = current_time - last_request_time[user_id]
+        if time_diff < RATE_LIMIT_SECONDS:
+            return False
+
+    last_request_time[user_id] = current_time
+    return True
+
+
+def is_valid_channel_id(channel_id: int) -> bool:
+    """Проверка валидности ID канала"""
+    # ID каналов обычно отрицательные
+    return isinstance(channel_id, int) and channel_id < 0
+
+
+# === ТЕКСТЫ ===
+TEXTS = {
+    "ru": {
+        1: (
+            "Здравствуйте! Рады вас приветствовать в официальном телеграмм боте образовательного центра \"НУР\". "
+            f"С 1 апреля 2025 года согласно <a href=\"{LAW_URL}\">Федеральному закону №544</a> "
+            "для поступления в школы иностранным гражданам необходимо сдать экзамен по русскому языку. "
+            f"В 2025 году <a href=\"{ROSOBR_URL}\">согласно данным Рособрнадзора</a> "
+            "почти 90% детей не смогли пройти тестирование и не поступили в школы.\n\n"
+        ),
+        2: (
+            "В связи с чем, образовательный центр \"НУР\" открывает набор на курсы по программам 1-11 класса по подготовки и сдачи данного тестирования. "
+            "Более подробная информация будет предоставлена на бесплатном вступительном занятии, который можно будет посетить очно (места ограничены) или онлайн.\n\n"
+        ),
+        3: (
+            "Для регистрации на занятие напишите в чате контактный номер телефона, далее менеджер с вами свяжется.\n\n"
+        ),
+    },
+
+    "uz": {
+        1: (
+            "Assalomy alaykum! Sizni NUR ta'lim markazining rasmiy bot telegrammalarida kutib olishdan mamnunmiz. "
+            "2025 yil 1 apreldagi "
+            f"<a href=\"{LAW_URL}\">№544-FZ-sonli Federal qonuniga</a> "
+            "maktablarga kirish uchun chet el fuqarolari rus tilidan imtihon topshirishlari kerak. "
+            f"2025 yilda <a href=\"{ROSOBR_URL}\">Rosobrnadzor ma'lumotlariga ko'ra</a> "
+            "bolalarning deyarli 90 foizi sinovdan o'ta olmadi va maktablarga kira olmadi.\n\n"
+        ),
+        2: (
+            "Shu munosabat bilan nur ta'lim markazi 1-11-sinf dasturlari bo'yicha ushbu testni tayyorlash va topshirish kurslarini ochadi. "
+            "Batafsil ma'lumot bepul kirish darsida taqdim etiladi, unga shaxsan tashrif buyurish mumkin (joylar cheklangan) yoki onlayn.\n\n"
+        ),
+        3: (
+            "Darsga yozilish uchun telefon raqamini yozing, shundan so'ng menejer siz bilan bog'lanadi.\n\n"
+        ),
+    },
+
+    "tg": {
+        1: (
+            "Салом! Хуш омадед ба телеграммаи расмии маркази таълимии нур. Аз 1 апрели соли 2025 тибқи қонуни Федеролии "
+            f"<a href=\"{LAW_URL}\">№544</a> "
+            "барои дохил шудан ба мактаб шаҳрвандони хориҷӣ бояд имтиҳони забони русиро супоранд. "
+            f"Дар соли 2025, <a href=\"{ROSOBR_URL}\">Тибқи Маълумоти Рособрнадзор</a> "
+            "почти 90% кӯдакон натавонистанд аз санҷиш гузаранд ва ба мактаб дохил нашуданд.\n\n"
+        ),
+        2: (
+            "Дар робита ба ин, маркази ТАЪЛИМИИ NOOR барномаҳои синфҳои 1-11-ро барои тайерӣ ва супоридани ин тест ба курсҳо даъват мекунад. "
+            "Маълумоти иловагӣ дар ҷаласаи муқаддимавии ройгон пешниҳод карда мешавад, ки онро шахсан дидан мумкин аст (шумораи ҷойҳо маҳдуд аст) е онлайн.\n\n"
+        ),
+        3: (
+            "Барои дохил шудан ба дарс, дар чат телефони тамосро ворид кунед, пас менеҷер бо шумо тамос мегирад.\n\n"
+        ),
+    },
+
+    "ky": {
+        1: (
+            "Салам! Жарык билим берүү борборунун расмий телеграммасына кош келиңиз. 1-жылдын 2025-апрелинен тартып, весит "
+            f"<a href=\"{LAW_URL}\">№544 Федералдык мыйзамына</a> "
+            "ылайык чет өлкөлүк жарандар мектепке кирүү үчүн орус тили боюнча экзамен тапшырышы керек. "
+            f"2025-жылы, <a href=\"{ROSOBR_URL}\">Рособрнадзордун айтымында</a> "
+            "почти балдардын 90% тест тапшыра албай, мектепке кире албай калышты.\n\n"
+        ),
+        2: (
+            "Ушуга байланыштуу, ОИИБ Окуу борбору бул тестти даярдоо жана тапшыруу боюнча 1-11-класстардын программасынын курстарына чакырат. "
+            "Көбүрөөк маалымат акысыз кирүү сессиясында берилет, ага жеке (орундар чектелген) же онлайн режиминде барууга болот.\n\n"
+        ),
+        3: (
+            "Сабакка катталуу үчүн чатта байланыш телефон номерин жазыңыз, андан ары менеджер сиз менен байланышат.\n\n"
+        ),
+    },
+
+    "en": {
+        1: (
+            "Hi! Welcome to the official telegram of the Light Education Center. From April 1, 2025, in accordance with Federal Law "
+            f"<a href=\"{LAW_URL}\">№544</a> "
+            "Foreign citizens must pass the Russian language exam in order to enroll in school. "
+            f"In 2025, <a href=\"{ROSOBR_URL}\">according to Rosobrnadzor</a> "
+            "almost 90% of the children failed the test and were unable to enroll in school.\n\n"
+        ),
+        2: (
+            "In this regard, the NUR educational center invites students to attend the courses of the 1st-11th grade program for the preparation and passing of this test. "
+            "More detailed information is provided in the free admission session, which can be attended in person (with a limited number of seats) or online.\n\n"
+        ),
+        3: (
+            "Enter your contact phone number in the chat to sign up for classes.\n\n"
+        ),
+    },
+}
+
+# Словарь для отслеживания состояния пользователей
+user_states: Dict[int, Dict[str, Any]] = {}  # user_id: {"lang": "ru", "page": 1}
+
+
+def lang_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для выбора языка"""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=label, callback_data=f"lang:{code}")]
+            for code, label in LANGS
+        ]
+    )
+
+
+def nav_keyboard(lang: str, page: int) -> InlineKeyboardMarkup:
+    """Клавиатура для навигации по страницам"""
+    buttons = []
+
+    if page > 1:
+        left = InlineKeyboardButton(text="⬅️", callback_data=f"prev:{lang}:{page}")
+    else:
+        left = InlineKeyboardButton(text="⬅️", callback_data="back:langs")
+
+    buttons.append(left)
+
+    if page < 3:
+        right = InlineKeyboardButton(text="➡️", callback_data=f"next:{lang}:{page}")
+        buttons.append(right)
+
+    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+
+
+# === ОТВЕТЫ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ ===
+RESPONSES = {
+    "success": {
+        "ru": "✅ Спасибо! Ваш номер телефона получен. Менеджер свяжется с вами в ближайшее время.",
+        "uz": "✅ Rahmat! Telefon raqamingiz qabul qilindi. Menejer tez orada siz bilan bog'lanadi.",
+        "tg": "✅ Ташаккур! Рақами телефони шумо гирифта шуд. Менеҷер ба зудӣ бо шумо тамос мегирад.",
+        "ky": "✅ Рахмат! Телефон номериңиз кабыл алынды. Менеджер жакын арада сиз менен байланышат.",
+        "en": "✅ Thank you! Your phone number has been received. The manager will contact you shortly."
+    },
+    "error": {
+        "ru": "❌ Произошла ошибка при отправке данных. Пожалуйста, попробуйте позже или свяжитесь с менеджером напрямую.",
+        "uz": "❌ Ma'lumotlarni yuborishda xatolik yuz berdi. Iltimos, keyinroq urinib ko'ring yoki menejer bilan bevosita bog'laning.",
+        "tg": "❌ Дар фиристодани маълумот хатогӣ ба амал омад. Лутфан, дертар кӯшиш кунед ё бо менеҷер бевосита тамос гиред.",
+        "ky": "❌ Маалыматтарды жөнөтүүдө ката кетти. Сураныч, кийинчерэек аракет кылыңыз же менеджер менен түздөн-түз байланышыңыз.",
+        "en": "❌ An error occurred while sending data. Please try again later or contact the manager directly."
+    },
+    "rate_limit": {
+        "ru": "⏳ Вы отправляете сообщения слишком часто. Пожалуйста, подождите немного.",
+        "uz": "⏳ Siz xabarlarni juda tez-tez yuboryapsiz. Iltimos, bir oz kuting.",
+        "tg": "⏳ Шумо паёмҳоро аз ҳад зиёд фиристода истодаед. Лутфан, каме интизор шавед.",
+        "ky": "⏳ Сиз билдирүүлөрдү өтө тез жибересиз. Сураныч, бир аз күтө туруңуз.",
+        "en": "⏳ You are sending messages too often. Please wait a moment."
+    },
+    "invalid_phone": {
+        "ru": "❌ Пожалуйста, введите корректный номер телефона. Пример: +79991234567 или 998901234567",
+        "uz": "❌ Iltimos, to'g'ri telefon raqamini kiriting. Misol: +79991234567 yoki 998901234567",
+        "tg": "❌ Лутфан, рақами телефони дурустро ворид кунед. Мисол: +79991234567 ё 992901234567",
+        "ky": "❌ Сураныч, туура телефон номерин киргизиңиз. Мисал: +79991234567 же 996701234567",
+        "en": "❌ Please enter a valid phone number. Example: +79991234567 or 998901234567"
+    }
+}
+
+
+async def main():
+    # Настройка логирования
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('bot.log', encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+
+    logger = logging.getLogger(__name__)
+
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode="HTML")
+    )
+    dp = Dispatcher()
+
+    @dp.message(CommandStart())
+    async def start(message: Message):
+        """Обработчик команды /start"""
+        if not check_rate_limit(message.from_user.id):
+            await message.answer(RESPONSES["rate_limit"]["ru"])
+            return
+
+        welcome_text = (
+            "Выберите язык / Tilni tanlang / Забонро интихоб кунед / Тилди тандаңыз / Choose language\n\n"
+            "🔒 Ваши данные защищены. Бот не хранит личную информацию."
+        )
+
+        await message.answer(welcome_text, reply_markup=lang_keyboard())
+
+    @dp.message(Command("help"))
+    async def help_command(message: Message):
+        """Обработчик команды /help"""
+        help_text = (
+            "ℹ️ <b>Помощь</b>\n\n"
+            "• /start - начать работу с ботом\n"
+            "• /help - показать это сообщение\n\n"
+            "Выберите язык для просмотра информации о курсах подготовки к экзаменам.\n"
+            "Для связи с менеджером укажите номер телефона на третьей странице."
+        )
+        await message.answer(help_text)
+
+    @dp.callback_query(F.data.startswith("lang:"))
+    async def choose_lang(cb: CallbackQuery):
+        """Выбор языка"""
+        try:
+            lang = cb.data.split(":", 1)[1]
+            if lang not in TEXTS:
+                await cb.answer("❌ Язык не поддерживается")
+                return
+
+            user_states[cb.from_user.id] = {"lang": lang, "page": 1}
+            await cb.message.edit_text(TEXTS[lang][1], reply_markup=nav_keyboard(lang, 1))
+            await cb.answer()
+        except Exception as e:
+            logger.error(f"Ошибка в choose_lang: {e}")
+            await cb.answer("❌ Произошла ошибка")
+
+    @dp.callback_query(F.data == "back:langs")
+    async def back_to_langs(cb: CallbackQuery):
+        """Возврат к выбору языка"""
+        try:
+            await cb.message.edit_text(
+                "Выберите язык / Tilni tanlang / Забонро интихоб кунед / Тилди тандаңыз / Choose language",
+                reply_markup=lang_keyboard()
+            )
+            await cb.answer()
+        except Exception as e:
+            logger.error(f"Ошибка в back_to_langs: {e}")
+
+    @dp.callback_query(F.data.startswith("next:"))
+    async def next_page(cb: CallbackQuery):
+        """Следующая страница"""
+        try:
+            _, lang, page_str = cb.data.split(":")
+            page = int(page_str) + 1
+
+            if lang not in TEXTS or page not in TEXTS[lang]:
+                await cb.answer("❌ Страница не найдена")
+                return
+
+            user_states[cb.from_user.id] = {"lang": lang, "page": page}
+            await cb.message.edit_text(TEXTS[lang][page], reply_markup=nav_keyboard(lang, page))
+            await cb.answer()
+        except Exception as e:
+            logger.error(f"Ошибка в next_page: {e}")
+            await cb.answer("❌ Произошла ошибка")
+
+    @dp.callback_query(F.data.startswith("prev:"))
+    async def prev_page(cb: CallbackQuery):
+        """Предыдущая страница"""
+        try:
+            _, lang, page_str = cb.data.split(":")
+            page = int(page_str) - 1
+
+            if lang not in TEXTS or page not in TEXTS[lang]:
+                await cb.answer("❌ Страница не найдена")
+                return
+
+            user_states[cb.from_user.id] = {"lang": lang, "page": page}
+            await cb.message.edit_text(TEXTS[lang][page], reply_markup=nav_keyboard(lang, page))
+            await cb.answer()
+        except Exception as e:
+            logger.error(f"Ошибка в prev_page: {e}")
+            await cb.answer("❌ Произошла ошибка")
+
+    @dp.message(F.text)
+    async def handle_phone_input(message: Message):
+        """Обработчик ввода номера телефона"""
+        user_id = message.from_user.id
+
+        # Проверка ограничения на частоту запросов
+        if not check_rate_limit(user_id):
+            lang = user_states.get(user_id, {}).get("lang", "ru")
+            await message.answer(RESPONSES["rate_limit"].get(lang, RESPONSES["rate_limit"]["ru"]))
+            return
+
+        # Проверяем, был ли пользователь на 3-й странице
+        user_state = user_states.get(user_id)
+        if not user_state or user_state["page"] != 3:
+            # Если пользователь не на 3-й странице, игнорируем или подсказываем
+            return
+
+        phone = sanitize_input(message.text.strip())
+        lang = user_state.get("lang", "ru")
+
+        # Валидация номера телефона
+        if not validate_phone_number(phone):
+            await message.answer(RESPONSES["invalid_phone"].get(lang, RESPONSES["invalid_phone"]["ru"]))
+            return
+
+        try:
+            # Формируем сообщение для канала
+            timestamp = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+            language_name = LANG_NAMES.get(lang, "Русский")
+
+            # Безопасно экранируем пользовательский ввод
+            safe_phone = html.escape(phone)
+            safe_name = html.escape(message.from_user.full_name or "Не указано")
+
+            channel_message = (
+                f"📱 <b>НОВЫЙ ЗАПРОС</b>\n\n"
+                f"🆔 <b>ID пользователя:</b> <code>{user_id}</code>\n"
+                f"👤 <b>Имя:</b> {safe_name}\n"
+            )
+
+            if message.from_user.username:
+                channel_message += f"🔗 <b>Username:</b> @{html.escape(message.from_user.username)}\n"
+
+            channel_message += (
+                f"📞 <b>Телефон:</b> <code>{safe_phone}</code>\n"
+                f"🌐 <b>Язык интерфейса:</b> {language_name}\n"
+                f"⏰ <b>Время:</b> {timestamp}\n\n"
+                f"💬 <a href='tg://user?id={user_id}'>Написать пользователю</a>"
+            )
+
+            # Проверяем ID канала перед отправкой
+            if not is_valid_channel_id(CHANNEL_ID):
+                logger.error(f"Некорректный ID канала: {CHANNEL_ID}")
+                raise ValueError("Некорректный ID канала")
+
+            # Отправляем в канал
+            await bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=channel_message,
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+
+            # Успешный ответ пользователю
+            await message.answer(RESPONSES["success"].get(lang, RESPONSES["success"]["ru"]))
+
+            # Логируем успешную отправку
+            logger.info(f"✅ Данные отправлены в канал {CHANNEL_ID} от пользователя {user_id}")
+
+        except Exception as e:
+            # Ошибка отправки
+            error_msg = RESPONSES["error"].get(lang, RESPONSES["error"]["ru"])
+            await message.answer(error_msg)
+
+            # Логируем ошибку
+            logger.error(f"❌ Ошибка отправки данных для пользователя {user_id}: {e}", exc_info=True)
+
+    @dp.errors()
+    async def error_handler(event, exception):
+        """Глобальный обработчик ошибок"""
+        logger.error(f"Глобальная ошибка: {exception}", exc_info=True)
+        return True
+
+    try:
+        logger.info("🤖 Бот запускается...")
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.error(f"Критическая ошибка при запуске бота: {e}", exc_info=True)
+    finally:
+        await bot.session.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
