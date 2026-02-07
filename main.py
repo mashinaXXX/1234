@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 BOT_TOKEN = os.getenv('TOKEN')
+
 CHANNEL_ID = -1003649569064
 
 RATE_LIMIT_SECONDS = 1
@@ -208,22 +209,37 @@ def nav_keyboard(lang: str, page: int) -> InlineKeyboardMarkup:
     """Клавиатура для навигации по страницам"""
     buttons = []
 
+    # Тексты кнопок на разных языках
+    back_texts = {
+        "ru": "⬅️ Назад",
+        "uz": "⬅️ Orqaga",
+        "tg": "⬅️ Бозгашт",
+        "ky": "⬅️ Артка",
+        "en": "⬅️ Back"
+    }
+
+    next_texts = {
+        "ru": "Далее ➡️",
+        "uz": "Keyingi ➡️",
+        "tg": "Баъдӣ ➡️",
+        "ky": "Кийинки ➡️",
+        "en": "Next ➡️"
+    }
+
     if page > 1:
-        left = InlineKeyboardButton(text="⬅️ Назад", callback_data=f"prev:{lang}:{page}")
+        left = InlineKeyboardButton(
+            text=back_texts.get(lang, "⬅️ Back"),
+            callback_data=f"prev:{lang}:{page}"
+        )
     else:
-        left = InlineKeyboardButton(text="⬅️ Назад", callback_data="back:langs")
+        left = InlineKeyboardButton(
+            text=back_texts.get(lang, "⬅️ Back"),
+            callback_data="back:langs"
+        )
 
     buttons.append(left)
 
     if page < 3:
-        # Текст кнопки на разных языках
-        next_texts = {
-            "ru": "Далее ➡️",
-            "uz": "Keyingi ➡️",
-            "tg": "Баъдӣ ➡️",
-            "ky": "Кийинки ➡️",
-            "en": "Next ➡️"
-        }
         right = InlineKeyboardButton(
             text=next_texts.get(lang, "Next ➡️"),
             callback_data=f"next:{lang}:{page}"
