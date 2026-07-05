@@ -10,7 +10,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message, ReplyKeyboardMarkup, \
-    KeyboardButton
+    KeyboardButton, ErrorEvent
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -377,9 +377,9 @@ async def main():
     logger = logging.getLogger(__name__)
 
     # Проверка конфигурации
-    if BOT_TOKEN == "my_token":
-        logger.error("❌ ОШИБКА: Замените 'my_token' на ваш реальный токен бота!")
-        print("❌ ОШИБКА: Замените 'my_token' на ваш реальный токен бота!")
+    if not BOT_TOKEN or BOT_TOKEN == "my_token":
+        logger.error("❌ ОШИБКА: Токен бота не задан. Укажите его в .env как TOKEN=...")
+        print("❌ ОШИБКА: Токен бота не задан. Укажите его в .env как TOKEN=...")
         return
 
     if not is_valid_channel_id(CHANNEL_ID):
@@ -392,6 +392,10 @@ async def main():
         default=DefaultBotProperties(parse_mode="HTML")
     )
     dp = Dispatcher()
+    # Бот рассчитан на личные сообщения — не реагируем в группах/каналах,
+    # куда его может добавить кто угодно (спам в CHANNEL_ID, лишняя нагрузка)
+    dp.message.filter(F.chat.type == "private")
+    dp.callback_query.filter(F.message.chat.type == "private")
 
     @dp.message(CommandStart())
     async def start_command(message: Message):
@@ -495,6 +499,7 @@ async def main():
             await cb.answer()
         except Exception as e:
             logger.error(f"Ошибка в back_to_langs: {e}")
+            await cb.answer("❌ Произошла ошибка")
 
     @dp.callback_query(F.data.startswith("next:"))
     async def next_page(cb: CallbackQuery):
@@ -633,9 +638,9 @@ async def main():
             logger.error(f"❌ Ошибка отправки данных для пользователя {user_id}: {e}", exc_info=True)
 
     @dp.errors()
-    async def error_handler(event, exception):
+    async def error_handler(event: ErrorEvent):
         """Глобальный обработчик ошибок"""
-        logger.error(f"Глобальная ошибка: {exception}", exc_info=True)
+        logger.error(f"Глобальная ошибка: {event.exception}", exc_info=event.exception)
         return True
 
     try:
