@@ -43,6 +43,7 @@ LANGS = [
     ("tg", "🇹🇯 Тоҷикӣ"),
     ("ky", "🇰🇬 Кыргызча"),
     ("en", "🇬🇧 English"),
+    ("hi", "🇮🇳 हिन्दी"),
 ]
 
 LANG_NAMES = dict(LANGS)
@@ -134,6 +135,23 @@ TEXTS = {
             "To register for a free class, write your contact phone number in the chat, and the manager will contact you.\n\n"
         ),
     },
+
+    "hi": {
+        1: (
+            "नमस्ते! शिक्षा केंद्र \"NUR\" के आधिकारिक टेलीग्राम बॉट में आपका स्वागत है! "
+            f"1 अप्रैल 2025 से <a href=\"{LAW_URL}\">संघीय कानून संख्या 544</a> के अनुसार, "
+            "विदेशी नागरिकों को स्कूल में प्रवेश के लिए रूसी भाषा की परीक्षा उत्तीर्ण करनी होगी। "
+            f"2025 में <a href=\"{ROSOBR_URL}\">रोसोबरनादज़ोर के आंकड़ों के अनुसार</a> "
+            "लगभग 90% बच्चे यह परीक्षा पास नहीं कर सके और स्कूल में प्रवेश नहीं ले सके।\n\n"
+        ),
+        2: (
+            "इस संबंध में, हम इस परीक्षा की तैयारी के लिए 1-11 कक्षा के कार्यक्रमों में प्रवेश खोल रहे हैं। "
+            "अधिक विस्तृत जानकारी एक निःशुल्क परिचयात्मक पाठ में दी जाएगी, जिसमें आप व्यक्तिगत रूप से (सीमित स्थान) या ऑनलाइन भाग ले सकते हैं।\n\n"
+        ),
+        3: (
+            "निःशुल्क पाठ के लिए पंजीकरण हेतु चैट में अपना संपर्क फ़ोन नंबर लिखें, इसके बाद प्रबंधक आपसे संपर्क करेगा।\n\n"
+        ),
+    },
 }
 
 # Словарь для отслеживания состояния пользователей
@@ -215,7 +233,8 @@ def nav_keyboard(lang: str, page: int) -> InlineKeyboardMarkup:
         "uz": "⬅️ Orqaga",
         "tg": "⬅️ Бозгашт",
         "ky": "⬅️ Артка",
-        "en": "⬅️ Back"
+        "en": "⬅️ Back",
+        "hi": "⬅️ पीछे"
     }
 
     next_texts = {
@@ -223,7 +242,8 @@ def nav_keyboard(lang: str, page: int) -> InlineKeyboardMarkup:
         "uz": "Keyingi ➡️",
         "tg": "Баъдӣ ➡️",
         "ky": "Кийинки ➡️",
-        "en": "Next ➡️"
+        "en": "Next ➡️",
+        "hi": "आगे ➡️"
     }
 
     if page > 1:
@@ -256,7 +276,8 @@ def get_start_text(lang: str = "ru") -> str:
         "uz": "\n\n🔁 Qayta boshlash uchun yuboring: /start",
         "tg": "\n\n🔁 Барои оғози нав, фиристед: /start",
         "ky": "\n\n🔁 Кайра баштоо үчүн жибериңиз: /start",
-        "en": "\n\n🔁 To start over, send: /start"
+        "en": "\n\n🔁 To start over, send: /start",
+        "hi": "\n\n🔁 फिर से शुरू करने के लिए भेजें: /start"
     }
     return start_texts.get(lang, start_texts["ru"])
 
@@ -308,6 +329,15 @@ def get_help_text(lang: str = "ru") -> str:
             "• On page 3, indicate your phone number to contact the manager\n\n"
             "📞 <b>Your contact information will be sent to the manager.</b>\n\n"
             "🔒 <i>Your data is protected. The bot does not store personal information.</i>"
+        ),
+        "hi": (
+            "🆘 <b>सहायता</b>\n\n"
+            "• बॉट के साथ काम शुरू करने के लिए <b>/start</b> भेजें\n"
+            "• पाठ्यक्रमों की जानकारी देखने के लिए भाषा चुनें\n"
+            "• नेविगेशन बटन का उपयोग करके पेज बदलें\n"
+            "• पेज 3 पर प्रबंधक से संपर्क के लिए अपना फ़ोन नंबर लिखें\n\n"
+            "📞 <b>आपकी संपर्क जानकारी प्रबंधक को भेजी जाएगी।</b>\n\n"
+            "🔒 <i>आपका डेटा सुरक्षित है। बॉट व्यक्तिगत जानकारी संग्रहीत नहीं करता है।</i>"
         )
     }
     return help_texts.get(lang, help_texts["ru"])
@@ -320,28 +350,32 @@ RESPONSES = {
         "uz": "✅ Rahmat! Telefon raqamingiz qabul qilindi. Menejer tez orada siz bilan bog'lanadi.",
         "tg": "✅ Ташаккур! Рақами телефони шумо гирифта шуд. Менеҷер ба зудӣ бо шумо тамос мегирад.",
         "ky": "✅ Рахмат! Телефон номериңиз кабыл алынды. Менеджер жакын арада сиз менен байланышат.",
-        "en": "✅ Thank you! Your phone number has been received. The manager will contact you shortly."
+        "en": "✅ Thank you! Your phone number has been received. The manager will contact you shortly.",
+        "hi": "✅ धन्यवाद! आपका फ़ोन नंबर प्राप्त हो गया है। प्रबंधक जल्द ही आपसे संपर्क करेगा।"
     },
     "error": {
         "ru": "❌ Произошла ошибка при отправке данных. Пожалуйста, попробуйте позже или свяжитесь с менеджером напрямую.",
         "uz": "❌ Ma'lumotlarni yuborishda xatolik yuz berdi. Iltimos, keyinroq urinib ko'ring yoki menejer bilan bevosita bog'laning.",
         "tg": "❌ Дар фиристодани маълумот хатогӣ ба амал омад. Лутфан, дертар кӯшиш кунед ё бо менеҷер бевосита тамос гиред.",
         "ky": "❌ Маалыматтарды жөнөтүүдө ката кетти. Сураныч, кийинчерэек аракет кылыңыз же менеджер менен түздөн-түз байланышыңыз.",
-        "en": "❌ An error occurred while sending data. Please try again later or contact the manager directly."
+        "en": "❌ An error occurred while sending data. Please try again later or contact the manager directly.",
+        "hi": "❌ डेटा भेजते समय एक त्रुटि हुई। कृपया बाद में पुनः प्रयास करें या सीधे प्रबंधक से संपर्क करें।"
     },
     "rate_limit": {
         "ru": "⏳ Вы отправляете сообщения слишком часто. Пожалуйста, подождите немного.",
         "uz": "⏳ Siz xabarlarni juda tez-tez yuboryapsiz. Iltimos, bir oz kuting.",
         "tg": "⏳ Шумо паёмҳоро аз ҳад зиёд фиристода истодаед. Лутфан, каме интизор шавед.",
         "ky": "⏳ Сиз билдирүүлөрдү өтө тез жибересиз. Сураныч, бир аз күтө туруңуз.",
-        "en": "⏳ You are sending messages too often. Please wait a moment."
+        "en": "⏳ You are sending messages too often. Please wait a moment.",
+        "hi": "⏳ आप बहुत बार संदेश भेज रहे हैं। कृपया थोड़ा इंतज़ार करें।"
     },
     "invalid_phone": {
         "ru": "❌ Пожалуйста, введите корректный номер телефона. Пример: +79991234567 или 998901234567",
         "uz": "❌ Iltimos, to'g'ri telefon raqamini kiriting. Misol: +79991234567 yoki 998901234567",
         "tg": "❌ Лутфан, рақами телефони дурустро ворид кунед. Мисол: +79991234567 ё 992901234567",
         "ky": "❌ Сураныч, туура телефон номерин киргизиңиз. Мисал: +79991234567 же 996701234567",
-        "en": "❌ Please enter a valid phone number. Example: +79991234567 or 998901234567"
+        "en": "❌ Please enter a valid phone number. Example: +79991234567 or 998901234567",
+        "hi": "❌ कृपया एक सही फ़ोन नंबर दर्ज करें। उदाहरण: +79991234567 या 998901234567"
     },
     "welcome": {
         "ru": "👋 <b>Добро пожаловать в образовательный центр \"НУР\"!</b>\n\n"
@@ -358,7 +392,10 @@ RESPONSES = {
               "👇 <b>Сураныч, интерфейс тилин тандаңыз:</b>",
         "en": "👋 <b>Welcome to the educational center \"NUR\"!</b>\n\n"
               "🔒 Your data is protected. The bot does not store personal information.\n\n"
-              "👇 <b>Please select the interface language:</b>"
+              "👇 <b>Please select the interface language:</b>",
+        "hi": "👋 <b>शिक्षा केंद्र \"NUR\" में आपका स्वागत है!</b>\n\n"
+              "🔒 आपका डेटा सुरक्षित है। बॉट व्यक्तिगत जानकारी संग्रहीत नहीं करता है।\n\n"
+              "👇 <b>कृपया इंटरफ़ेस भाषा चुनें:</b>"
     }
 }
 
@@ -562,7 +599,7 @@ async def main():
             # Если пользователь не на 3-й странице, проверяем ключевые слова
             text_lower = message.text.lower()
             start_keywords = ["старт", "start", "начать", "boshlash", "начинать", "go", "привет", "здравствуйте",
-                              "помощь", "help"]
+                              "помощь", "help", "नमस्ते", "शुरू"]
 
             if any(keyword in text_lower for keyword in start_keywords):
                 # Если пользователь пишет что-то похожее на старт, начинаем заново
